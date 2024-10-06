@@ -16,4 +16,4 @@ def spawn_ai(algo_name, sess, env, handle, human_name, max_steps):
         model = AC(sess, human_name, handle, env)
     elif algo_name == 'il':
         model = IL(sess, human_name, handle, env, max_steps, memory_size=80000)
-    return model
+    return model 
