@@ -399,29 +399,42 @@ void GridWorld::get_observation(GroupHandle group, float **linear_buffers) {
         delete [] minimap.data;
 }
 
+// 为一组代理设置动作，并将这些动作分类到不同的缓冲区中
+// actions：一个整数数组，分别表示每个代理的动作
 void GridWorld::set_action(GroupHandle group, const int *actions) {
+    // 获取该组所有代理
     std::vector<Agent*> &agents = groups[group].get_agents();
+    // 获取该组代理的类型
     const AgentType &type = groups[group].get_type();
     // action space layout : move turn attack ...
+    // 计算地图的带宽，用于将地图分成多个部分，以便并行处理
+    // 在width维度上，bandwidth为每个分区的宽度，NUM_SEP_BUFFER为分区个数
     const int bandwidth = (width + NUM_SEP_BUFFER - 1) / NUM_SEP_BUFFER;
 
     size_t agent_size = agents.size();
 
+    // 如果启用了大地图模式，代码会将动作分配到不同的缓冲区，以便并行计算
     if (large_map_mode) { // divide actions in group, in order to compute them in parallel
+    // 遍历每个代理，将对应的动作设置给代理
         for (int i = 0; i < agent_size; i++) {
             Agent *agent = agents[i];
             Action act = (Action) actions[i];
+            // agent.lastact = act
             agent->set_action(act);
-
+            // 移动动作
+            // 根据代理的 x 坐标，将动作分配到 move_buffer_bound 或 move_buffers缓存区 中
             if (act < type.turn_base) {          // move
                 int x = agent->get_pos().x;
                 int x_ = x % bandwidth;
                 if (x_ < 4 || x_ > bandwidth - 4) {
+                    // push_back为内置函数，同append
                     move_buffer_bound.push_back(MoveAction{agent, act - type.move_base});
                 } else {
                     int to = agent->get_pos().x / bandwidth;
                     move_buffers[to].push_back(MoveAction{agent, act - type.move_base});
                 }
+            // 转弯动作
+            // 根据代理的 x 坐标，将动作分配到 turn_buffer_bound 或 turn_buffers缓存区 中
             } else if (act < type.attack_base) { // turn
                 int x = agent->get_pos().x;
                 int x_ = x % bandwidth;
@@ -431,10 +444,14 @@ void GridWorld::set_action(GroupHandle group, const int *actions) {
                     int to = agent->get_pos().x / bandwidth;
                     turn_buffers[to].push_back(TurnAction{agent, act - type.move_base});
                 }
+            // 攻击动作
+            // 只分配到attack_buffer缓存区中
             } else {                             // attack
                 attack_buffer.push_back(AttackAction{agent, act - type.attack_base});
             }
         }
+    // 非大地图模式
+    // 直接将动作分配到 move_buffer_bound、turn_buffer_bound 和 attack_buffer 中，不考虑代理位置
     } else {
         for (int i = 0; i < agent_size; i++) {
             Agent *agent = agents[i];
@@ -453,6 +470,7 @@ void GridWorld::set_action(GroupHandle group, const int *actions) {
 }
 
 void GridWorld::step(int *done) {
+    // 用于声明一个自定义的归约操作，用以并行操作
     #pragma omp declare reduction (merge : std::vector<RenderAttackEvent> : omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end()))
     const bool stat = false;
 
@@ -461,8 +479,12 @@ void GridWorld::step(int *done) {
     size_t group_size  = groups.size();
 
     // shuffle attacks
+    // 使用 Fisher-Yates 洗牌算法来打乱数组 attack_buffer 的前 attack_size 个元素
+    // 每一行都是MoveAction{agent, act - type.move_base}类型的结构体，所以不用担心agent与action不对应，只是打乱了agent的顺序
     for (int i = 0; i < attack_size; i++) {
+        // 生成一个在0到i之间的随机数j
         int j = (int)random_engine() % (i+1);
+        // swap内置函数，用于交换两个元素的位置
         std::swap(attack_buffer[i], attack_buffer[j]);
     }
 
@@ -472,6 +494,7 @@ void GridWorld::step(int *done) {
 
     // attack
     #pragma omp parallel for reduction(merge: render_attack_buffer)
+    // attack方面的更新
     for (int i = 0; i < attack_size; i++) {
         Agent *agent = attack_buffer[i].agent;
 
@@ -479,15 +502,18 @@ void GridWorld::step(int *done) {
             continue;
 
         int obj_x, obj_y;
+        // attack_buffer[i]为攻击者的结构体，obj_x, obj_y为被攻击者位置
         PositionInteger obj_pos = map.get_attack_obj(attack_buffer[i], obj_x, obj_y);
         if (!first_render)
             render_attack_buffer.emplace_back(RenderAttackEvent{agent->get_id(), obj_x, obj_y});
-
+        
+        // 如果攻击对象为空，代理会受到惩罚。
         if (obj_pos == -1) {  // attack blank block
             agent->add_reward(agent->get_type().attack_penalty);
             continue;
         }
-
+        
+        // 如果攻击成功，会更新奖励和死亡计数。
         if (stat) {
             attack_obj_counter[obj_pos]++;
         }
@@ -516,6 +542,8 @@ void GridWorld::step(int *done) {
     }
 
     // starve
+    // 饥饿阶段
+    // 检查每个代理是否因饥饿而死亡，并更新死亡计数
     LOG(TRACE) << "starve.  ";
     for (int i = 0; i < group_size; i++) {
         Group &group = groups[i];
@@ -540,8 +568,10 @@ void GridWorld::step(int *done) {
         group.set_dead_ct(group.get_dead_ct() + starve_ct);
     }
 
+    // 如果启用了转向模式，执行转向操作。
     if (turn_mode) {
         // do turn
+        // 定义了一个lambda函数，处理一个回合缓存区turn_buf
         auto do_turn_for_a_buffer = [] (std::vector<TurnAction> &turn_buf, Map &map) {
             //std::random_shuffle(turn_buf.begin(), turn_buf.end());
             size_t turn_size = turn_buf.size();
@@ -570,6 +600,8 @@ void GridWorld::step(int *done) {
     }
 
     // do move
+    // 处理移动缓存区
+
     auto do_move_for_a_buffer = [] (std::vector<MoveAction> &move_buf, Map &map) {
         //std::random_shuffle(move_buf.begin(), move_buf.end());
         size_t move_size = move_buf.size();
@@ -604,24 +636,30 @@ void GridWorld::step(int *done) {
     if (large_map_mode) {
         LOG(TRACE) << "move parallel.  ";
         #pragma omp parallel for
+        // 大地图分割了NUM_SEP_BUFFER个缓存区，并行处理这些缓存区的移动
         for (int i = 0; i < NUM_SEP_BUFFER; i++) {    // move in separate areas, do them in parallel
             do_move_for_a_buffer(move_buffers[i], map);
         }
     }
+    // 处理边界缓存
     LOG(TRACE) << "move boundary.  ";
     do_move_for_a_buffer(move_buffer_bound, map);
 
     LOG(TRACE) << "calc_reward.  ";
+    // 调用函数计算奖励
     calc_reward();
 
+    // 判断游戏是否结束
     LOG(TRACE) << "game over check.  ";
     int live_ct = 0;  // default game over condition: all the agents in an arbitrary group die
     for (int i = 0; i < groups.size(); i++) {
         if (groups[i].get_alive_num() > 0)
             live_ct++;
     }
+    // 单位全死亡，游戏结束
     *done = (int)(live_ct < groups.size());
 
+    //遍历所有奖励规则，如果某个规则的 trigger 为真且 is_terminal 为真，则设置 *done 为真，表示游戏结束
     size_t rule_size = reward_rules.size();
     for (int i = 0; i < rule_size; i++) {
         if (reward_rules[i].trigger && reward_rules[i].is_terminal)
@@ -681,11 +719,14 @@ void GridWorld::calc_reward() {
     size_t rule_size = reward_rules.size();
     for (int i = 0; i < groups.size(); i++)
         groups[i].set_recursive_base(0);
-
+    
+    // 遍历所有奖励规则，并对每条规则进行处理
     for (int i = 0; i < rule_size; i++) {
+        // 重置触发标志
         reward_rules[i].trigger = false;
         std::vector<AgentSymbol*> &input_symbols = reward_rules[i].input_symbols;
         std::vector<AgentSymbol*> &infer_obj     = reward_rules[i].infer_obj;
+        // 根据获取的input_symbols和infer_obj计算奖励
         calc_rule(input_symbols, infer_obj, reward_rules[i], 0);
     }
 }

@@ -1,5 +1,5 @@
 - builtin: built-in configuration and RL algorithms
-- renderer: pygame renderer
+- renderer: pygame renderer 渲染器，负责将游戏中的图形元素绘制到屏幕上
 - c_lib.py: call c functions
 - gridworld.py: gridworld interface
 - model.py: base class for model

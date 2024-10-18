@@ -13,9 +13,15 @@
  *  General Environment
  */
 int env_new_game(EnvHandle *game, const char *name) {
+    // EnvHandle *game：这是一个指向环境句柄的指针，用于存储创建的游戏实例
+    // const char *name：这是一个指向字符数组的指针，表示游戏的名称
+    // 返回值 int：函数返回一个整数，0 表示成功
+
+    // 相当于导入magent\utility\strequ方法
     using ::magent::utility::strequ;
 
     if (strequ(name, "GridWorld")) {
+        // new相当于调用构造函数新建一个对象，
         *game = new ::magent::gridworld::GridWorld();
     } else if (strequ(name, "DiscreteSnake")) {
         *game = new ::magent::discrete_snake::DiscreteSnake();

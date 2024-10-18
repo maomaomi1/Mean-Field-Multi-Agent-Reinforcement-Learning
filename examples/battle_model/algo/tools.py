@@ -3,42 +3,65 @@ import tensorflow as tf
 import os
 
 
+# 定义常量，用于在终端中打印带有颜色的信息
 class Color:
     INFO = '\033[1;34m{}\033[0m'
     WARNING = '\033[1;33m{}\033[0m'
     ERROR = '\033[1;31m{}\033[0m'
 
 
+# 定义了一个抽象基类
 class Buffer:
+
     def __init__(self):
         pass
 
+    # 直接调用这个函数会抛出异常
+    # 这种方式通常表明push方法需要在子类中实现
     def push(self, **kwargs):
         raise NotImplementedError
 
 
+# 固定大小的环形缓冲区，可以存储多维数组数据
 class MetaBuffer(object):
+
     def __init__(self, shape, max_len, dtype='float32'):
+
+        # 缓冲区最大长度
         self.max_len = max_len
-        self.data = np.zeros((max_len,) + shape).astype(dtype)
+
+        # 初始化一个形状为 (max_len,) + shape 的零数组，用于存储数据
+        # shape通常是一个元组，表示一个多维数组的形状，对于一个二维数组，shape可能是(m, n)，其中m是行数，n是列数
+        # (max_len,) + shape) = (max_len, m, n)
+        self.data = np.zeros((max_len, ) + shape).astype(dtype)
+
+        # 起始索引
         self.start = 0
+        # 当前缓冲区中数据的长度
         self.length = 0
+        # 内部标志，用于管理环形缓冲区的位置，标志追加数据时的索引位置
         self._flag = 0
 
     def __len__(self):
         return self.length
 
+    # 获取缓存区中指定索引的数据
     def __getitem__(self, idx):
         if idx < 0 or idx >= self.length:
             raise KeyError()
         return self.data[idx]
 
+    # 也是获取指定索引的数据，通过取余，使得索引不会超出data长度，实现循环索引的效果
+    # 可以有效应对循环或者周期性的数据访问
+    # 实现环形缓存区
     def sample(self, idx):
         return self.data[idx % self.length]
 
+    # 返回缓存区内所有有效数据
     def pull(self):
         return self.data[:self.length]
 
+    # 向缓冲区中追加数据。如果追加的数据超过了缓冲区的最大长度，则会覆盖旧数据，实现环形缓冲区的功能。
     def append(self, value):
         start = 0
         num = len(value)
@@ -54,20 +77,32 @@ class MetaBuffer(object):
         self._flag += num
         self.length = min(self.length + len(value), self.max_len)
 
+    # 从指定的起始位置 start 开始，重置缓冲区中的数据
     def reset_new(self, start, value):
         self.data[start:] = value
 
 
+# episode缓存区（一个训练回合：分多个时间步）
+# 用于存储一个强化学习（或其他类似应用）中的单个 episode（即一次完整的交互序列）的数据
+# 存储单个智能体的数据
 class EpisodesBufferEntry:
     """Entry for episode buffer"""
+
     def __init__(self):
+        # 存储每个时间步的视图（通常是环境的观测）
         self.views = []
+        # 存储每个时间步的特征（可能是从视图中提取的特征）
         self.features = []
+        # 存储每个时间步的动作。
         self.actions = []
+        # 存储每个时间步的奖励
         self.rewards = []
+        # 存储每个时间步的动作概率（可能用于策略梯度方法）
         self.probs = []
+        # 一个布尔值，表示这个 episode 是否已经结束
         self.terminal = False
 
+    # 添加数据
     def append(self, view, feature, action, reward, alive, probs=None):
         self.views.append(view.copy())
         self.features.append(feature.copy())
@@ -79,12 +114,16 @@ class EpisodesBufferEntry:
             self.terminal = True
 
 
+# 用于储存多个智能体的完整 episode 数据
 class EpisodesBuffer(Buffer):
     """Replay buffer to store a whole episode for all agents
        one entry for one agent
     """
+
     def __init__(self, use_mean=False):
         super().__init__()
+
+        # 一个字典，用于存储每个智能体的 episode 数据
         self.buffer = {}
         self.use_mean = use_mean
 
@@ -92,15 +131,19 @@ class EpisodesBuffer(Buffer):
         view, feature = kwargs['state']
         acts = kwargs['acts']
         rewards = kwargs['rewards']
+        # 智能体存活状态
         alives = kwargs['alives']
+        # 智能体id
         ids = kwargs['ids']
 
         if self.use_mean:
             probs = kwargs['prob']
 
         buffer = self.buffer
+        # 返回一个长度等于len(view)，数值为0-len(view)的随机排序的数组，类似于[3, 1, 4, 0, 2]
         index = np.random.permutation(len(view))
 
+        # 取出每一个智能体的缓存区EpisodesBufferEntry，添加状态
         for i in range(len(ids)):
             i = index[i]
             entry = buffer.get(ids[i])
@@ -109,22 +152,34 @@ class EpisodesBuffer(Buffer):
                 buffer[ids[i]] = entry
 
             if self.use_mean:
-                entry.append(view[i], feature[i], acts[i], rewards[i], alives[i], probs=probs[i])
+                # EpisodesBufferEntry类的方法，针对这个智能体更新数据缓存
+                entry.append(view[i],
+                             feature[i],
+                             acts[i],
+                             rewards[i],
+                             alives[i],
+                             probs=probs[i])
             else:
-                entry.append(view[i], feature[i], acts[i], rewards[i], alives[i])
+                entry.append(view[i], feature[i], acts[i], rewards[i],
+                             alives[i])
 
     def reset(self):
         """ clear replay buffer """
         self.buffer = {}
 
+    # 返回所有存储的数据
     def episodes(self):
         """ get episodes """
         return self.buffer.values()
 
 
+# 用于管理和存储单个智能体的交互数据
+# 使用MetaBuffer环形缓存区来存储各类数据
 class AgentMemory(object):
+
     def __init__(self, obs_shape, feat_shape, act_n, max_len, use_mean=False):
         self.obs0 = MetaBuffer(obs_shape, max_len)
+        # 特征数据
         self.feat0 = MetaBuffer(feat_shape, max_len)
         self.actions = MetaBuffer((), max_len, dtype='int32')
         self.rewards = MetaBuffer((), max_len)
@@ -132,8 +187,9 @@ class AgentMemory(object):
         self.use_mean = use_mean
 
         if self.use_mean:
-            self.prob = MetaBuffer((act_n,), max_len)
+            self.prob = MetaBuffer((act_n, ), max_len)
 
+    # 添加各类数据
     def append(self, obs0, feat0, act, reward, alive, prob=None):
         self.obs0.append(np.array([obs0]))
         self.feat0.append(np.array([feat0]))
@@ -144,6 +200,7 @@ class AgentMemory(object):
         if self.use_mean:
             self.prob.append(np.array([prob]))
 
+    # 取出该智能体的所有历史数据
     def pull(self):
         res = {
             'obs0': self.obs0.pull(),
@@ -157,28 +214,46 @@ class AgentMemory(object):
         return res
 
 
+# 用于管理多个智能体的交互数据。通过 AgentMemory 类来存储每个智能体的数据
 class MemoryGroup(object):
-    def __init__(self, obs_shape, feat_shape, act_n, max_len, batch_size, sub_len, use_mean=False):
+
+    def __init__(self,
+                 obs_shape,
+                 feat_shape,
+                 act_n,
+                 max_len,
+                 batch_size,
+                 sub_len,
+                 use_mean=False):
+        # 存储所有智能体的id：AgentMemory对
         self.agent = dict()
+        # 缓冲区最大长度
         self.max_len = max_len
+        # batch批次大小
         self.batch_size = batch_size
         self.obs_shape = obs_shape
         self.feat_shape = feat_shape
+        # 每个智能体的子缓冲区长度
         self.sub_len = sub_len
         self.use_mean = use_mean
         self.act_n = act_n
 
+        # 初始化多个环形缓存区，一个缓存区存储一类数据
         self.obs0 = MetaBuffer(obs_shape, max_len)
         self.feat0 = MetaBuffer(feat_shape, max_len)
         self.actions = MetaBuffer((), max_len, dtype='int32')
         self.rewards = MetaBuffer((), max_len)
+        # 存储终止状态数据，bool类型
         self.terminals = MetaBuffer((), max_len, dtype='bool')
         self.masks = MetaBuffer((), max_len, dtype='bool')
         if use_mean:
-            self.prob = MetaBuffer((act_n,), max_len)
+            self.prob = MetaBuffer((act_n, ), max_len)
+        # 记录新添加的数据量
         self._new_add = 0
 
+    # 传入数据（所有智能体的数据一齐存储）
     def _flush(self, **kwargs):
+        # 将传入的数据添加到相应的 MetaBuffer缓存区中
         self.obs0.append(kwargs['obs0'])
         self.feat0.append(kwargs['feat0'])
         self.actions.append(kwargs['act'])
@@ -188,32 +263,58 @@ class MemoryGroup(object):
         if self.use_mean:
             self.prob.append(kwargs['prob'])
 
+        # np.where()通过条件判断创建一个新数组：对于kwargs['terminals']中等于True的元素，新数组中对应的位置将被赋值为False，反之为True
+        # 强化学习中，掩码通常用于标识有效的时间步，terminals为True表示终止状态，则说明这段数据是无效的，所以用mask表示遮蔽这段数据
+        # 掩码的存在可以帮助在采样和训练过程中过滤掉无效的数据，确保算法只使用有效的时间步数据进行计算。
         mask = np.where(kwargs['terminals'] == True, False, True)
+        # 为什么最后一个时间步的数据不被使用：强化学习中最后一个时间步的数据可能不完整或者不适用某些运算
         mask[-1] = False
         self.masks.append(mask)
 
+    # 为每个智能体存储数据
     def push(self, **kwargs):
         for i, _id in enumerate(kwargs['ids']):
             if self.agent.get(_id) is None:
-                self.agent[_id] = AgentMemory(self.obs_shape, self.feat_shape, self.act_n, self.sub_len, use_mean=self.use_mean)
+                self.agent[_id] = AgentMemory(self.obs_shape,
+                                              self.feat_shape,
+                                              self.act_n,
+                                              self.sub_len,
+                                              use_mean=self.use_mean)
             if self.use_mean:
-                self.agent[_id].append(obs0=kwargs['state'][0][i], feat0=kwargs['state'][1][i], act=kwargs['acts'][i], reward=kwargs['rewards'][i], alive=kwargs['alives'][i], prob=kwargs['prob'][i])
+                self.agent[_id].append(obs0=kwargs['state'][0][i],
+                                       feat0=kwargs['state'][1][i],
+                                       act=kwargs['acts'][i],
+                                       reward=kwargs['rewards'][i],
+                                       alive=kwargs['alives'][i],
+                                       prob=kwargs['prob'][i])
             else:
-                self.agent[_id].append(obs0=kwargs['state'][0][i], feat0=kwargs['state'][1][i], act=kwargs['acts'][i], reward=kwargs['rewards'][i], alive=kwargs['alives'][i])
+                self.agent[_id].append(obs0=kwargs['state'][0][i],
+                                       feat0=kwargs['state'][1][i],
+                                       act=kwargs['acts'][i],
+                                       reward=kwargs['rewards'][i],
+                                       alive=kwargs['alives'][i])
 
+    # 将各智能体的数据从各自的缓存区合并到主缓存区
     def tight(self):
         ids = list(self.agent.keys())
+        # 对id序列随机打乱
         np.random.shuffle(ids)
         for ele in ids:
             tmp = self.agent[ele].pull()
+            # _new_add表征新添加的数据量
             self._new_add += len(tmp['obs0'])
             self._flush(**tmp)
+        # 清空智能体缓存区，这样做是为了在下一次数据收集时重新初始化每个智能体的缓冲区。
         self.agent = dict()  # clear
 
+    # 随机选择batch个时间步，返回这些时间步的各项数据
     def sample(self):
+        # 随机选择 batch_size 个索引，这些索引是针对self.obs0缓存区的
         idx = np.random.choice(self.nb_entries, size=self.batch_size)
+        # 计算这些索引的下一个时间步索引
         next_idx = (idx + 1) % self.nb_entries
 
+        # 将这些索引在多个类型的缓存区中对应的数据都取出来，obs0中存储所有智能体的每个时间步的观测数据
         obs = self.obs0.sample(idx)
         obs_next = self.obs0.sample(next_idx)
         feature = self.feat0.sample(idx)
@@ -230,35 +331,61 @@ class MemoryGroup(object):
         else:
             return obs, feature, obs_next, feature_next, dones, rewards, actions, masks
 
+    # 计算当前缓冲区中可以采样的有效批次数
+    # （因为在强化学习中，尤其是使用经验回放（Experience Replay）技术时，数据是以批次（batch）的形式进行采样和训练的）
     def get_batch_num(self):
-        print('\n[INFO] Length of buffer and new add:', len(self.obs0), self._new_add)
+        # 打印缓冲区的长度和新添加的数据量
+        print('\n[INFO] Length of buffer and new add:', len(self.obs0),
+              self._new_add)
+        # _new_add是最近一次数据合并后新增的数据量，计算这些新增数据可以采样的有效批次数
+        # 乘以2是为了引入一定的冗余
         res = self._new_add * 2 // self.batch_size
         self._new_add = 0
         return res
 
     @property
+    # 返回缓存区的长度
     def nb_entries(self):
         return len(self.obs0)
 
 
+# 用于管理 TensorFlow 的日志记录和摘要操作
+# 在训练过程中记录各种指标
 class SummaryObj:
     """
     Define a summary holder
     """
+
     def __init__(self, log_dir, log_name, n_group=1):
         self.name_set = set()
+
+        # 初始化一个计算图graph
+        # 创建一个独立的计算环境，在这个环境中可以定义各种计算操作、变量和常量等。这样可以更好地组织和管理复杂的计算任务，尤其是在处理多个不同的模型或者复杂的计算流程时。
+        # graph会作为会话的输入创建会话 sess = tf.Session(graph=graph)
         self.gra = tf.Graph()
         self.n_group = n_group
 
+        # 创建日志文件夹
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
 
-        sess_config = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)
+        # session参数设置：
+        """
+        allow_soft_placement=True：允许 TensorFlow 自动选择设备。
+        log_device_placement=False：不记录设备分配日志。
+        gpu_options.allow_growth=True：动态分配 GPU 内存。
+        """
+        sess_config = tf.ConfigProto(allow_soft_placement=True,
+                                     log_device_placement=False)
         sess_config.gpu_options.allow_growth = True
 
+        # with self.gra.as_default():是在计算图gra中定义一些操作
         with self.gra.as_default():
             self.sess = tf.Session(graph=self.gra, config=sess_config)
-            self.train_writer = tf.summary.FileWriter(log_dir + "/" + log_name, graph=tf.get_default_graph())
+            # 创建一个 FileWriter 对象 self.train_writer，用于将摘要信息写入指定的日志目录
+            self.train_writer = tf.summary.FileWriter(
+                log_dir + "/" + log_name, graph=tf.get_default_graph())
+            #  初始化 self.gra 计算图中的所有全局变量
             self.sess.run(tf.global_variables_initializer())
 
     def register(self, name_list):
@@ -272,12 +399,21 @@ class SummaryObj:
         with self.gra.as_default():
             for name in name_list:
                 if name in self.name_set:
-                    raise Exception("You cannot define different operations with same name: `{}`".format(name))
+                    raise Exception(
+                        "You cannot define different operations with same name: `{}`"
+                        .format(name))
                 self.name_set.add(name)
-                setattr(self, name, [tf.placeholder(tf.float32, shape=None, name='Agent_{}_{}'.format(i, name))
-                                     for i in range(self.n_group)])
-                setattr(self, name + "_op", [tf.summary.scalar('Agent_{}_{}_op'.format(i, name), getattr(self, name)[i])
-                                             for i in range(self.n_group)])
+                setattr(self, name, [
+                    tf.placeholder(tf.float32,
+                                   shape=None,
+                                   name='Agent_{}_{}'.format(i, name))
+                    for i in range(self.n_group)
+                ])
+                setattr(self, name + "_op", [
+                    tf.summary.scalar('Agent_{}_{}_op'.format(i, name),
+                                      getattr(self, name)[i])
+                    for i in range(self.n_group)
+                ])
 
     def write(self, summary_dict, step):
         """Write summary related to a certain step
@@ -295,16 +431,34 @@ class SummaryObj:
                 raise Exception("Undefined operation: `{}`".format(key))
             if isinstance(value, list):
                 for i in range(self.n_group):
-                    self.train_writer.add_summary(self.sess.run(getattr(self, key + "_op")[i], feed_dict={
-                        getattr(self, key)[i]: value[i]}), global_step=step)
+                    self.train_writer.add_summary(self.sess.run(
+                        getattr(self, key + "_op")[i],
+                        feed_dict={getattr(self, key)[i]: value[i]}),
+                                                  global_step=step)
             else:
-                self.train_writer.add_summary(self.sess.run(getattr(self, key + "_op")[0], feed_dict={
-                        getattr(self, key)[0]: value}), global_step=step)
+                self.train_writer.add_summary(self.sess.run(
+                    getattr(self, key + "_op")[0],
+                    feed_dict={getattr(self, key)[0]: value}),
+                                              global_step=step)
 
 
 class Runner(object):
-    def __init__(self, sess, env, handles, map_size, max_steps, models,
-                play_handle, render_every=None, save_every=None, tau=None, log_name=None, log_dir=None, model_dir=None, train=False):
+
+    def __init__(self,
+                 sess,
+                 env,
+                 handles,
+                 map_size,
+                 max_steps,
+                 models,
+                 play_handle,
+                 render_every=None,
+                 save_every=None,
+                 tau=None,
+                 log_name=None,
+                 log_dir=None,
+                 model_dir=None,
+                 train=False):
         """Initialize runner
 
         Parameters
@@ -350,7 +504,10 @@ class Runner(object):
         if self.train:
             self.summary = SummaryObj(log_name=log_name, log_dir=log_dir)
 
-            summary_items = ['ave_agent_reward', 'total_reward', 'kill', "Sum_Reward", "Kill_Sum"]
+            summary_items = [
+                'ave_agent_reward', 'total_reward', 'kill', "Sum_Reward",
+                "Kill_Sum"
+            ]
             self.summary.register(summary_items)  # summary register
             self.summary_items = summary_items
 
@@ -360,8 +517,10 @@ class Runner(object):
 
             l_vars, r_vars = self.models[0].vars, self.models[1].vars
             assert len(l_vars) == len(r_vars)
-            self.sp_op = [tf.assign(r_vars[i], (1. - tau) * l_vars[i] + tau * r_vars[i])
-                                for i in range(len(l_vars))]
+            self.sp_op = [
+                tf.assign(r_vars[i], (1. - tau) * l_vars[i] + tau * r_vars[i])
+                for i in range(len(l_vars))
+            ]
 
             if not os.path.exists(self.model_dir):
                 os.makedirs(self.model_dir)
@@ -371,10 +530,24 @@ class Runner(object):
 
         # pass
         info['main'] = {'ave_agent_reward': 0., 'total_reward': 0., 'kill': 0.}
-        info['opponent'] = {'ave_agent_reward': 0., 'total_reward': 0., 'kill': 0.}
+        info['opponent'] = {
+            'ave_agent_reward': 0.,
+            'total_reward': 0.,
+            'kill': 0.
+        }
 
-        max_nums, nums, agent_r_records, total_rewards = self.play(env=self.env, n_round=iteration, map_size=self.map_size, max_steps=self.max_steps, handles=self.handles,
-                    models=self.models, print_every=50, eps=variant_eps, render=(iteration + 1) % self.render_every if self.render_every > 0 else False, train=self.train)
+        max_nums, nums, agent_r_records, total_rewards = self.play(
+            env=self.env,
+            n_round=iteration,
+            map_size=self.map_size,
+            max_steps=self.max_steps,
+            handles=self.handles,
+            models=self.models,
+            print_every=50,
+            eps=variant_eps,
+            render=(iteration + 1) %
+            self.render_every if self.render_every > 0 else False,
+            train=self.train)
 
         for i, tag in enumerate(['main', 'opponent']):
             info[tag]['total_reward'] = total_rewards[i]
