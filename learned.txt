@@ -1,0 +1,58 @@
+session.run()函数允许你在 TensorFlow 计算图中指定要运行的操作，并返回这些操作的结果。它的主要功能包括：
+1、执行操作：可以执行单个操作或一组操作，例如矩阵乘法、加法、激活函数等。
+2、获取张量值：可以获取计算图中张量的值，这些张量可以是中间结果或最终输出。
+3、初始化变量：在运行操作之前，可以使用session.run()来初始化变量，确保模型处于正确的初始状态。
+
+session.run(fetches, feed_dict=None)函数接受两个主要参数：
+1、fetches：
+这是一个必需的参数，指定要运行的操作或要获取的张量。
+可以是单个操作、张量或一个包含多个操作和张量的列表。
+例如，可以是一个具体的张量，如session.run(my_tensor)，以获取该张量的值；也可以是一个操作，如session.run(my_operation)，以执行该操作。
+2、feed_dict：
+这是一个可选的参数，用于提供输入数据给计算图中的占位符。
+它是一个字典，其中键是占位符，值是要提供给占位符的数据。
+例如，如果计算图中有一个占位符my_placeholder，可以通过session.run(fetches, feed_dict={my_placeholder: input_data})将输入数据传递给占位符。
+
+
+##### 实例说明 #####
+占位符并不直接属于某个特定的Session。占位符是在计算图中定义的节点，它可以在任何使用该计算图的Session中被馈送数据。
+只要保证名称对应就行：
+示例代码：（直接在外部定义placeholder）
+例1：
+import tensorflow as tf
+
+my_placeholder = tf.placeholder(tf.float32, shape=[None, 10])
+another_tensor = tf.matmul(my_placeholder, some_matrix)
+
+with tf.Session() as sess:
+    input_data =...  # 准备输入数据
+    result = sess.run(another_tensor, feed_dict={my_placeholder: input_data})
+
+例2：在图空间中定义占位符，使用session计算指定图，这样的优点是占位符很多且重名时，可以创建多个图便于管理
+import tensorflow as tf
+
+# 定义计算图
+graph = tf.Graph()
+with graph.as_default():
+    my_placeholder = tf.placeholder(tf.float32, shape=[None, 10])
+    another_tensor = tf.matmul(my_placeholder, some_matrix)
+
+# 创建 Session 并使用计算图
+with tf.Session(graph=graph) as sess:
+    input_data =...
+    result = sess.run(another_tensor, feed_dict={my_placeholder: input_data})
+
+
+为什么使用session.run 需要with：with tf.Session() as sess
+1、当使用with语句时，在with代码块执行完毕后，会话会自动关闭并释放资源。这可以确保不会因为忘记手动关闭会话而导致资源泄漏。
+2、如果直接创建会话实例而不使用with语句，那么在使用完会话后，必须显式地调用sess.close()来关闭会话
+3、with语句可以更好地处理异常情况。如果在代码块执行过程中发生异常，with语句会确保会话被正确地关闭，即使出现错误也能保证资源的合理释放。
+
+
+tf.assign()是一个用于赋值操作的函数：
+tf.assign(ref, value, validate_shape=None, use_locking=None, name=None)函数的主要作用是将一个新的值赋给一个已存在的变量。
+1、ref：这是要被赋值的变量，可以是一个张量变量（通过 tf.Variable() 创建）
+2、value：这是要赋给 ref 的新值。
+3、validate_shape：如果为 True（默认值），则会检查 value 的形状是否与 ref 的形状匹配。
+4、use_locking：如果为 True，则在赋值操作期间使用锁来确保线程安全。
+5、name：操作的名称

@@ -388,6 +388,8 @@ class SummaryObj:
             #  初始化 self.gra 计算图中的所有全局变量
             self.sess.run(tf.global_variables_initializer())
 
+    # 用于注册一组摘要操作
+    # 摘要操作通常用于在训练过程中记录和监控各种指标（如损失、准确率等）
     def register(self, name_list):
         """Register summary operations with a list contains names for these operations
 
@@ -396,6 +398,7 @@ class SummaryObj:
         name_list: list, contains name whose type is str
         """
 
+        # 确保在当前的计算图self.gra中定义操作
         with self.gra.as_default():
             for name in name_list:
                 if name in self.name_set:
@@ -403,18 +406,29 @@ class SummaryObj:
                         "You cannot define different operations with same name: `{}`"
                         .format(name))
                 self.name_set.add(name)
+                
+                # 使用setattr动态地为对象添加属性
+                """
+                setattr(object, name, value)
+                object：要设置属性的对象。
+                name：属性名，可以是字符串形式。
+                value：要设置的属性值。
+                """
+                # 创建摘要属性
                 setattr(self, name, [
                     tf.placeholder(tf.float32,
                                    shape=None,
                                    name='Agent_{}_{}'.format(i, name))
                     for i in range(self.n_group)
                 ])
+                # 创建监控属性：监控各种指标（如损失、准确率等），监控从摘要属性中读取
                 setattr(self, name + "_op", [
                     tf.summary.scalar('Agent_{}_{}_op'.format(i, name),
                                       getattr(self, name)[i])
                     for i in range(self.n_group)
                 ])
 
+    # 训练过程中写入摘要数据
     def write(self, summary_dict, step):
         """Write summary related to a certain step
 
@@ -426,15 +440,23 @@ class SummaryObj:
 
         assert isinstance(summary_dict, dict)
 
+        # summary_dict: 一个字典，键是摘要操作的名称，值是对应的值（列表）
         for key, value in summary_dict.items():
+            #  检查键是否在 self.name_set 中，如果不在则抛出异常
             if key not in self.name_set:
                 raise Exception("Undefined operation: `{}`".format(key))
             if isinstance(value, list):
+                
+                # 遍历每个组（n_group），并使用 self.sess.run 执行相应的摘要操作，将结果写入 self.train_writer 中
+                # add_summary 方法将 session.run 执行摘要操作的结果写入到日志文件中
                 for i in range(self.n_group):
                     self.train_writer.add_summary(self.sess.run(
+                        # 获取摘要操作
                         getattr(self, key + "_op")[i],
+                        # feed_dict={...} 是一个字典，用于将实际的值传递给 placeholder
                         feed_dict={getattr(self, key)[i]: value[i]}),
                                                   global_step=step)
+            # 如果值不是列表，则只处理第一个组group的摘要操作
             else:
                 self.train_writer.add_summary(self.sess.run(
                     getattr(self, key + "_op")[0],
@@ -442,6 +464,7 @@ class SummaryObj:
                                               global_step=step)
 
 
+# Runner类：用于在一个网格世界环境中运行和训练强化学习模型
 class Runner(object):
 
     def __init__(self,
@@ -473,21 +496,21 @@ class Runner(object):
             map size of grid world
         max_steps: int
             the maximum of stages in a episode
-        render_every: int
+        render_every: int 渲染环境的间隔
             render environment interval
-        save_every: int
+        save_every: int 保存模型的间隔
             states the interval of evaluation for self-play update
-        models: list
+        models: list 包含模型的列表
             contains models
-        play_handle: method like
+        play_handle: method like 运行游戏的方法的handle
             run game
-        tau: float
+        tau: float 自我对弈更新的指数
             tau index for self-play update
-        log_name: str
+        log_name: str 日志目录的名称
             define the name of log dir
-        log_dir: str
+        log_dir: str 日志目录
             donates the directory of logs
-        model_dir: str
+        model_dir: str 模型目录
             donates the dircetory of models
         """
         self.env = env
@@ -502,8 +525,10 @@ class Runner(object):
         self.train = train
 
         if self.train:
+            # 创建 SummaryObj 对象，用于记录训练过程中的摘要数据
             self.summary = SummaryObj(log_name=log_name, log_dir=log_dir)
 
+            # 注册一些摘要项目，如平均奖励、总奖励、击杀数、奖励和、击杀总数
             summary_items = [
                 'ave_agent_reward', 'total_reward', 'kill', "Sum_Reward",
                 "Kill_Sum"
@@ -512,10 +537,13 @@ class Runner(object):
             self.summary_items = summary_items
 
             assert isinstance(sess, tf.Session)
+            # name_scope为该model定义的变量作用域，这里确保两个模型的变量作用域不同
             assert self.models[0].name_scope != self.models[1].name_scope
             self.sess = sess
 
+            # 获取两个模型的各自变量域中的所有变量
             l_vars, r_vars = self.models[0].vars, self.models[1].vars
+            # 确保变量长度相等
             assert len(l_vars) == len(r_vars)
             self.sp_op = [
                 tf.assign(r_vars[i], (1. - tau) * l_vars[i] + tau * r_vars[i])
