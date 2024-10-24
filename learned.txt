@@ -56,3 +56,5 @@ tf.assign(ref, value, validate_shape=None, use_locking=None, name=None)函数的
 3、validate_shape：如果为 True（默认值），则会检查 value 的形状是否与 ref 的形状匹配。
 4、use_locking：如果为 True，则在赋值操作期间使用锁来确保线程安全。
 5、name：操作的名称
+
+每次模型的训练在一个游戏回合（一次仿真）结束后进行，包含多个仿真步的信息进行模型训练

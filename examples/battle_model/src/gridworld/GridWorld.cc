@@ -84,6 +84,7 @@ void GridWorld::reset() {
     }
 
     // reset map
+    // 释放内存，将地图的边界全部设置为墙
     map.reset(width, height, food_mode);
 
     if (counter_x != nullptr)

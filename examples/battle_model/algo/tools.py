@@ -406,7 +406,7 @@ class SummaryObj:
                         "You cannot define different operations with same name: `{}`"
                         .format(name))
                 self.name_set.add(name)
-                
+
                 # 使用setattr动态地为对象添加属性
                 """
                 setattr(object, name, value)
@@ -446,16 +446,17 @@ class SummaryObj:
             if key not in self.name_set:
                 raise Exception("Undefined operation: `{}`".format(key))
             if isinstance(value, list):
-                
+
                 # 遍历每个组（n_group），并使用 self.sess.run 执行相应的摘要操作，将结果写入 self.train_writer 中
                 # add_summary 方法将 session.run 执行摘要操作的结果写入到日志文件中
                 for i in range(self.n_group):
-                    self.train_writer.add_summary(self.sess.run(
-                        # 获取摘要操作
-                        getattr(self, key + "_op")[i],
-                        # feed_dict={...} 是一个字典，用于将实际的值传递给 placeholder
-                        feed_dict={getattr(self, key)[i]: value[i]}),
-                                                  global_step=step)
+                    self.train_writer.add_summary(
+                        self.sess.run(
+                            # 获取摘要操作
+                            getattr(self, key + "_op")[i],
+                            # feed_dict={...} 是一个字典，用于将实际的值传递给 placeholder
+                            feed_dict={getattr(self, key)[i]: value[i]}),
+                        global_step=step)
             # 如果值不是列表，则只处理第一个组group的摘要操作
             else:
                 self.train_writer.add_summary(self.sess.run(
@@ -545,6 +546,10 @@ class Runner(object):
             l_vars, r_vars = self.models[0].vars, self.models[1].vars
             # 确保变量长度相等
             assert len(l_vars) == len(r_vars)
+
+            # self.sp_op存储了一系列软更新操作，通过调用self.sess.run(self.sp_op)就可以实现r_vars的更新
+            # 这里l_vars定义为主模型（主网络），通常频繁更新，这是主要用于学习和更新策略的模型。它根据当前的经验（如状态、动作、奖励）进行频繁的参数更新，以优化策略或价值函数
+            # r_vars定义为目标网络，通常缓慢更新，r_vars的参数使用下面的式子加权更新
             self.sp_op = [
                 tf.assign(r_vars[i], (1. - tau) * l_vars[i] + tau * r_vars[i])
                 for i in range(len(l_vars))
@@ -553,10 +558,16 @@ class Runner(object):
             if not os.path.exists(self.model_dir):
                 os.makedirs(self.model_dir)
 
+    # 用于执行强化学习的训练或评估的一个回合
+    # variant_eps：探索率（epsilon），用于控制在当前训练回合中的探索和利用平衡
+    # iteration：当前训练的迭代次数
     def run(self, variant_eps, iteration, win_cnt=None):
-        info = {'mian': None, 'opponent': None}
+        info = {'main': None, 'opponent': None}
 
         # pass
+        # 初始化字典信息
+        # info：一个字典，包含主模型和对手模型的统计信息，包括平均奖励、总奖励和击杀数
+        # "mian"为我方，"opponent"为敌方
         info['main'] = {'ave_agent_reward': 0., 'total_reward': 0., 'kill': 0.}
         info['opponent'] = {
             'ave_agent_reward': 0.,
@@ -564,6 +575,14 @@ class Runner(object):
             'kill': 0.
         }
 
+        # self.play是在创建Runner对象时输入的play_handle（一个函数句柄）
+        # 进行一个回合的仿真和模型的训练
+        """
+        max_nums：所有group的最大单位数
+        nums：所有group在回合结束时的单位总数
+        agent_r_records：所有group在本回合内的平均reward
+        total_rewards：所有单位在本回合内的总reward
+        """
         max_nums, nums, agent_r_records, total_rewards = self.play(
             env=self.env,
             n_round=iteration,
@@ -577,26 +596,38 @@ class Runner(object):
             self.render_every if self.render_every > 0 else False,
             train=self.train)
 
+        # 更新info表中的总奖励、杀敌数、平均奖励
         for i, tag in enumerate(['main', 'opponent']):
             info[tag]['total_reward'] = total_rewards[i]
             info[tag]['kill'] = max_nums[i] - nums[1 - i]
             info[tag]['ave_agent_reward'] = agent_r_records[i]
 
+        # 如果在训练模式下，进行模型参数的更新
         if self.train:
+            # 打印友方智能体的info
             print('\n[INFO] {}'.format(info['main']))
 
             # if self.save_every and (iteration + 1) % self.save_every == 0:
+            # 如果友方智能体的总奖励大于敌方智能体，进行自对弈更新
+            # 注：在self.play中已经更新了model[0]的参数，这里用自对弈方式更新model[1]的参数，一般来说model[1]可能是旧版本或已经可用的模型
+            # 这样可以让model[1]学习model[0]的策略，增大模型1的战斗力，反过来增大model[0]受挑战的强度
             if info['main']['total_reward'] > info['opponent']['total_reward']:
                 print(Color.INFO.format('\n[INFO] Begin self-play Update ...'))
+
+                # 运行 TensorFlow 会话中的自对弈更新操作
+                # tf.assign(r_vars[i], (1. - tau) * l_vars[i] + tau * r_vars[i])
                 self.sess.run(self.sp_op)
                 print(Color.INFO.format('[INFO] Self-play Updated!\n'))
 
                 print(Color.INFO.format('[INFO] Saving model ...'))
+                # 调用save函数保存模型权重
                 self.models[0].save(self.model_dir + '-0', iteration)
                 self.models[1].save(self.model_dir + '-1', iteration)
 
+                # 将该次仿真的结果写入摘要
                 self.summary.write(info['main'], iteration)
         else:
+            # 如果不在训练模式下，记录该次对抗的结果
             print('\n[INFO] {0} \n {1}'.format(info['main'], info['opponent']))
             if info['main']['kill'] > info['opponent']['kill']:
                 win_cnt['main'] += 1

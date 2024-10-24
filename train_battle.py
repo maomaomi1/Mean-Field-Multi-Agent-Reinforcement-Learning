@@ -119,6 +119,8 @@ if __name__ == '__main__':
     sess.run(tf.global_variables_initializer())
 
     # 创建runner对象，Runner 对象负责运行训练或测试过程，管理整个训练流程
+    # from examples.battle_model.senario_battle import play
+    # play输入为运行一次训练的函数handle
     runner = tools.Runner(sess,
                           env,
                           handles,
