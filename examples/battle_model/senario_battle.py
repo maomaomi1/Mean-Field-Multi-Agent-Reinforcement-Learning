@@ -180,15 +180,18 @@ def play(env, n_round, map_size, max_steps, handles, models, print_every, eps=1.
 
     return max_nums, nums, mean_rewards, total_rewards
 
-
+# 与上面的play类似，play用于训练，battle用已经训练好的模型来跑仿真
+# train=False表示默认不在训练模式
 def battle(env, n_round, map_size, max_steps, handles, models, print_every, eps=1.0, render=False, train=False):
     """play a ground and train"""
+    # 场景初始化
     env.reset()
     generate_map(env, map_size, handles)
 
     step_ct = 0
     done = False
 
+    # 初始化各种状态列表
     n_group = len(handles)
     state = [None for _ in range(n_group)]
     acts = [None for _ in range(n_group)]
@@ -207,22 +210,27 @@ def battle(env, n_round, map_size, max_steps, handles, models, print_every, eps=
 
     former_act_prob = [np.zeros((1, env.get_action_space(handles[0])[0])), np.zeros((1, env.get_action_space(handles[1])[0]))]
 
+    # 仿真主循环
     while not done and step_ct < max_steps:
         # take actions for every model
+        # 获取状态和ID
         for i in range(n_group):
             state[i] = list(env.get_observation(handles[i]))
             ids[i] = env.get_agent_id(handles[i])
 
+        # 根据当前状态和上一步动作选择动作
         for i in range(n_group):
             former_act_prob[i] = np.tile(former_act_prob[i], (len(state[i][0]), 1))
             acts[i] = models[i].act(state=state[i], prob=former_act_prob[i], eps=eps)
 
+        # 执行动作
         for i in range(n_group):
             env.set_action(handles[i], acts[i])
 
         # simulate one step
         done = env.step()
 
+        # 获取奖励和生存状态
         for i in range(n_group):
             rewards[i] = env.get_reward(handles[i])
             alives[i] = env.get_alive(handles[i])
@@ -233,6 +241,7 @@ def battle(env, n_round, map_size, max_steps, handles, models, print_every, eps=
         # stat info
         nums = [env.get_num(handle) for handle in handles]
 
+        # 计算平均奖励
         for i in range(n_group):
             sum_reward = sum(rewards[i])
             rewards[i] = sum_reward / nums[i]

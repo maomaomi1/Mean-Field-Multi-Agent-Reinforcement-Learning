@@ -17,6 +17,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # 定义线性衰减函数，根据训练的轮数线性地衰减参数值
 def linear_decay(epoch, x, y):
+    """
+    epoch: 当前的时间点（或迭代次数），用于决定返回哪个值。
+    x: 一个列表，表示时间点的集合，通常是整数或浮点数，按升序排列。
+    y: 一个列表，表示与时间点 x 对应的值，通常是浮点数，表示在这些时间点的目标值。
+    其实就是插值
+    """
     min_v, max_v = y[0], y[-1]
     start, end = x[0], x[-1]
 
@@ -80,7 +86,7 @@ if __name__ == '__main__':
     # 设置渲染文件的保存目录（gridworld.py中的方法）（os.path.join将几个路径拼接起来）
     env.set_render_dir(
         os.path.join(BASE_DIR, 'examples/battle_model', 'build/render'))
-    # 获取智能体的句柄（源代码中self.group_handles.append(handle)应该是指group中的所有单位）
+    # 两个group的句柄
     handles = env.get_handles()
 
     # TensorFlow配置
