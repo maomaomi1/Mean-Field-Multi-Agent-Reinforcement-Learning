@@ -58,3 +58,27 @@ tf.assign(ref, value, validate_shape=None, use_locking=None, name=None)函数的
 5、name：操作的名称
 
 每次模型的训练在一个游戏回合（一次仿真）结束后进行，包含多个仿真步的信息进行模型训练
+
+这里只有python驱动C++，没有反向驱动：
+_LIB.env_new_game(ctypes.byref(game), b"GridWorld") ##只下达初始化场景的指令，不涉及返回值
+## 这里传入numpy数组buf的指针，C++函数env_get_info中会直接修改buf的值
+_LIB.env_get_info(
+    self.game, handle, b"view_space",
+    buf.ctypes.data_as(ctypes.POINTER(ctypes.c_int32)))
+
+matlab与python交互时数据类型自动转换：
+MATLAB 数组 转换为 Python 列表 或 NumPy 数组。
+MATLAB 字符串 转换为 Python 字符串。
+MATLAB 结构体 转换为 Python 字典。
+也就是说matlab定义的函数的输入可以是python数据类型，可以直接处理
+# my_script.py
+def my_function(data):
+    # 假设 data 是一个列表
+    return [x * 2 for x in data]
+在 MATLAB 中调用这个函数：
+% 在 MATLAB 中调用 Python 函数
+data = [1, 2, 3, 4];  % MATLAB 数组
+result = py.my_script.my_function(data);
+result = double(result);  % 将 Python 列表转换为 MATLAB 数组
+disp(result);
+## 在matlab中调python函数时，python函数的输入可以是matlab数据，输出可以是python数据
