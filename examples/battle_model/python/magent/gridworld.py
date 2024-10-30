@@ -68,6 +68,7 @@ class GridWorld(Environment):
         }
 
         # 将全局配置转换成C++的数据类型，并导入game的设置中
+        # 全局配置只有"map_width"、"map_height"、"minimap_mode"、"embedding_size"
         for key in config.config_dict:
             value_type = config_value_type[key]
             if value_type is int:
@@ -89,6 +90,21 @@ class GridWorld(Environment):
         # 注册代理类型
         for name in config.agent_type_dict:
             # 取出所有作战类型
+            """
+            type_args包括：
+            'width': 1,
+            'length': 1,
+            'hp': 10,
+            'speed': 2,
+            'view_range': gw.CircleRange(6),
+            'attack_range': gw.CircleRange(1.5),
+            'damage': 2,
+            'step_recover': 0.1,
+            'step_reward': -0.005,
+            'kill_reward': 5,
+            'dead_penalty': -0.1,
+            'attack_penalty': -0.1,
+            """
             type_args = config.agent_type_dict[name]
 
             # special pre-process for view range and attack range

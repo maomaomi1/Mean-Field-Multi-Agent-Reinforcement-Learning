@@ -100,6 +100,7 @@ private:
 
     // game states : map, agent and group
     Map map;
+    // 创建了一个名为agent_types的容器，容器的key为str，value对AgentType对象
     std::map<std::string, AgentType> agent_types;
     std::vector<Group> groups;
     std::default_random_engine random_engine;

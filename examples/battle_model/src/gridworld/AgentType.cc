@@ -31,7 +31,8 @@ AgentType::AgentType(int n, std::string name, const char **keys, float *values, 
     this->name = name;
 
     // default value
-    attack_in_group = false;
+    // 设置默认值
+    attack_in_group = false; // 群体内攻击
     width = length = 1;
     speed = 1.0; hp = 1.0;
 
@@ -117,6 +118,7 @@ AgentType::AgentType(int n, std::string name, const char **keys, float *values, 
     }
     int n_action = attack_base + attack_range->get_count();
     for (int i = 0; i < n_action; i++) {
+        // 在末尾添加一个新元素
         action_space.push_back(i);
     }
     // action space layout : move turn attack ...

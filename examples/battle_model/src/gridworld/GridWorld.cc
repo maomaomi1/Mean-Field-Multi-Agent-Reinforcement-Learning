@@ -26,11 +26,14 @@ GridWorld::GridWorld() {
 
     reward_des_initialized = false;
     embedding_size = 0;
+    // 为这个随机数生成引擎设置种子（seed）值为0
+    // random_engine为C++内置随机数生成引擎
     random_engine.seed(0);
 
     counter_x = counter_y = nullptr;
 }
 
+// 析构函数（GridWorld的一个对象被摧毁时的处理）：释放一系列相关资源
 GridWorld::~GridWorld() {
     for (int i = 0; i < groups.size(); i++) {
         std::vector<Agent*> &agents = groups[i].get_agents();
@@ -43,6 +46,7 @@ GridWorld::~GridWorld() {
         }
 
         // free ranges
+        // get_type()返回一个AgentType对象，以引用的形式赋值给type
         AgentType &type = groups[i].get_type();
         if (type.view_range != nullptr) {
             delete type.view_range;
@@ -151,9 +155,12 @@ void GridWorld::set_config(const char *key, void *p_value) {
 void GridWorld::register_agent_type(const char *name, int n, const char **keys, float *values) {
     std::string str(name);
 
+    // 检查要注册的 AgentType 名称是否已经存在于 agent_types 容器中
+    // 若重复则报错
     if (agent_types.find(str) != agent_types.end())
         LOG(FATAL) << "duplicated name of agent type in GridWorld::register_agent_type : " << str;
-
+    
+    // std::make_pair 将新构造的 AgentType 对象与对应的名称 str 组合成一个键值对
     agent_types.insert(std::make_pair(str, AgentType(n, str, keys, values, turn_mode)));
 }
 
@@ -747,9 +754,12 @@ void GridWorld::get_reward(GroupHandle group, float *buffer) {
 /**
  * info getter
  */
+
+ // 根据传入的 name 参数决定返回哪种类型的信息，并将结果存储在 void_buffer 指向的内存中
 void GridWorld::get_info(GroupHandle group, const char *name, void *void_buffer) {
     // for more information from the engine, add items here
 
+    // agents为group所对应的所有智能体
     std::vector<Agent*> &agents = groups[group].get_agents();
     int   *int_buffer   = (int *)void_buffer;
     float *float_buffer = (float *)void_buffer;
@@ -776,19 +786,30 @@ void GridWorld::get_info(GroupHandle group, const char *name, void *void_buffer)
         for (int i = 0; i < agent_size; i++) {
             bool_buffer[i] = !agents[i]->is_dead();
         }
+    
+    // 生成一个全局视图，显示所有群体的代理分布
+    // 最终返回值以[view_height][view_width][n_group]数据格式表示
+    // 每个元素代表该n_group在该分区内的智能体的密度（归一化）
     } else if (strequ(name, "global_minimap")) {
         size_t n_group = groups.size();
 
+        // 从 float_buffer 中读取，表示小地图的高度和宽度
         int view_height = (int)lround(float_buffer[0]);
         int view_width = (int)lround(float_buffer[1]);
+        // 将float_buffer指向的内存区域的(view_height, view_width, n_group)大小的矩阵区域都设置为0
         memset(float_buffer, 0, sizeof(float) * view_height * view_width * n_group);
 
+        // 创建小地图结构
+        // minimap 是一个三维数组，维度为 [view_height][view_width][n_group]，用于表示每个群体在小地图上的分布
         NDPointer<float, 3> minimap(float_buffer, {view_height, view_width, (int)n_group});
 
+        // 计算高和宽的缩放比例，用于将实际位置缩放到小地图的尺寸
         int scale_h = (height + view_height - 1) / view_height;
         int scale_w = (width + view_width - 1) / view_width;
 
         for (size_t i = 0; i < n_group; i++) {
+            // 群体按通道分离
+            // 每个群体的数据被放置在小地图的不同通道上，即 [view_height][view_width][n_group] 中的 n_group 维度。每个通道对应一个群体
             size_t channel = (i - group + n_group) % n_group;
             std::vector<Agent*> &agents_ = groups[i].get_agents();
             for (size_t j = 0; j < agents_.size(); j++) {
@@ -797,12 +818,16 @@ void GridWorld::get_info(GroupHandle group, const char *name, void *void_buffer)
                 minimap.at(y, x, channel)++;
             }
             // scale
+            // 归一化，每个分区的数量除以总数，得到种群密度
+            // 在 [view_height][view_width] 对应的元素中，每个位置的值表示该位置上某个群体的代理密度。经过归一化处理后，值代表该区域内代理的相对密度
             for (size_t j = 0; j < view_height; j++) {
                 for (size_t k = 0; k < view_width; k++) {
                     minimap.at(j, k, channel) /= agents_.size();
                 }
             }
         }
+
+    // 用于计算代理的平均位置信息和动作分布。以下是详细解释
     } else if (strequ(name, "mean_info")) {
         size_t agent_size = agents.size();
         int n_action = (int)groups[group].get_type().action_space.size();

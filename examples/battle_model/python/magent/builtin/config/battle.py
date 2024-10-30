@@ -10,6 +10,7 @@ def get_config(map_size):
     # set方法设置全局配置
     cfg.set({"map_width": map_size, "map_height": map_size})
     cfg.set({"minimap_mode": True})
+    # 嵌入空间大小
     cfg.set({"embedding_size": 10})
 
     # 创建一个代理类型
