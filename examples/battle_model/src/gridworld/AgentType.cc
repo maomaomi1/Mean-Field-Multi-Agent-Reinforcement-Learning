@@ -85,6 +85,7 @@ AgentType::AgentType(int n, std::string name, const char **keys, float *values, 
 
     // NOTE: do not support SectorRange with angle >= 180, only support circle range when angle >= 180
     int parity = width % 2; // use parity to make range center-symmetric
+    // 攻击范围和view范围都用Range类来实现
     if (view_angle >= 180) {
         if (fabs(view_angle - 360) > 1e-5) {
             LOG(FATAL) << "only supports ranges with angle = 360, when angle > 180.";
@@ -103,12 +104,15 @@ AgentType::AgentType(int n, std::string name, const char **keys, float *values, 
         attack_range = new SectorRange(attack_angle, attack_radius, parity);
     }
 
+    // 移动范围（也用range表示），speed*step表示一个仿真步的移动长度
     move_range   = new CircleRange(speed, 0, 1);
+    // width和length为agent的身躯大小，所以不能作为质点模型，range需要添加offset
     view_x_offset = width / 2; view_y_offset = length / 2;
     att_x_offset  = width / 2; att_y_offset  = length / 2;
     turn_x_offset = 0; turn_y_offset = 0;
 
     move_base = 0;
+    // move_range的圆环覆盖的格子数为turn_base数目
     turn_base = move_range->get_count();
 
     if (turn_mode) {
@@ -116,6 +120,8 @@ AgentType::AgentType(int n, std::string name, const char **keys, float *values, 
     } else {
         attack_base = turn_base;
     }
+    // 动作数n_action定义为移动count与attack_count的和
+    // 动作空间定义为0到n_action-1
     int n_action = attack_base + attack_range->get_count();
     for (int i = 0; i < n_action; i++) {
         // 在末尾添加一个新元素

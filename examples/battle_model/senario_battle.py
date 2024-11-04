@@ -18,8 +18,12 @@ def generate_map(env, map_size, handles):
     n = init_num
     side = int(math.sqrt(n)) * 2
     pos = []
+    
+    ## 在地图中添加单位，位置均匀，单位朝向随机
     for x in range(width//2 - gap - side, width//2 - gap - side + side, 2):
         for y in range((height - side)//2, (height - side)//2 + side, 2):
+            
+            ## 前两个元素代表x，y坐标，第三个元素代表速度方向，"custom"表示速度方向随机，所以取0
             pos.append([x, y, 0])
     env.add_agents(handles[leftID], method="custom", pos=pos)
 
@@ -99,11 +103,13 @@ def play(env, n_round, map_size, max_steps, handles, models, print_every, eps=1.
 
         for i in range(n_group):
             # np.tile(A, reps)为重复A数组reps次数
+            # 原为(1,action_nums)，复制后为(n,action_nums)
             former_act_prob[i] = np.tile(former_act_prob[i], (len(state[i][0]), 1))
             # 每个模型根据状态和 “前一个动作的概率” 选择动作
             acts[i] = models[i].act(state=state[i], prob=former_act_prob[i], eps=eps)
 
         # 将选择的动作设置到环境中
+        # 需要把上一步的act设置为last_action属性
         for i in range(n_group):
             env.set_action(handles[i], acts[i])
 
@@ -140,6 +146,7 @@ def play(env, n_round, map_size, max_steps, handles, models, print_every, eps=1.
 
         # stat info更新统计信息
         # 获取种群的代理数量
+        # 还未清除死亡单位时的nums
         nums = [env.get_num(handle) for handle in handles]
 
         # 计算每个group的总reward和平均reward
@@ -155,9 +162,13 @@ def play(env, n_round, map_size, max_steps, handles, models, print_every, eps=1.
             env.render()
 
         # clear dead agents
+        ## 1、初始化group的reward为0，group也有reward
+        ## 2、初始化agent的reward：默认有个step_reward
+        ## 3、清除死亡的agent出去group
         env.clear_dead()
         
         # np.round是将数组中的每个元素保留小数点后6位
+        # 用于打印info
         info = {"Ave-Reward": np.round(rewards, decimals=6), "NUM": nums}
 
         # 仿真步+1
@@ -192,6 +203,7 @@ def battle(env, n_round, map_size, max_steps, handles, models, print_every, eps=
     done = False
 
     # 初始化各种状态列表
+    # 所有参数都以列表形式，第一个元素是model0的参数，第二个是model1的参数
     n_group = len(handles)
     state = [None for _ in range(n_group)]
     acts = [None for _ in range(n_group)]
@@ -202,12 +214,16 @@ def battle(env, n_round, map_size, max_steps, handles, models, print_every, eps=
     nums = [env.get_num(handle) for handle in handles]
     max_nums = nums.copy()
 
+    ## 格式n_action = [10, 10]
     n_action = [env.get_action_space(handles[0])[0], env.get_action_space(handles[1])[0]]
 
     print("\n\n[*] ROUND #{0}, EPS: {1:.2f} NUMBER: {2}".format(n_round, eps, nums))
+    
+    ## 也是两个元素的数组
     mean_rewards = [[] for _ in range(n_group)]
     total_rewards = [[] for _ in range(n_group)]
 
+    ## 格式举例：[np(1,10),np(1,10)]
     former_act_prob = [np.zeros((1, env.get_action_space(handles[0])[0])), np.zeros((1, env.get_action_space(handles[1])[0]))]
 
     # 仿真主循环

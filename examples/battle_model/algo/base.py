@@ -231,7 +231,9 @@ class ValueNet:
         """
         # 观察和特征输入
         feed_dict = {
+            ## view_buf
             self.obs_input: kwargs['state'][0],
+            ## feature_buf
             self.feat_input: kwargs['state'][1]
         }
 
@@ -240,12 +242,14 @@ class ValueNet:
         if self.use_mf:
             assert kwargs.get('prob', None) is not None
             assert len(kwargs['prob']) == len(kwargs['state'][0])
+            ## former_act_prob
             feed_dict[self.act_prob_input] = kwargs['prob']
 
         # feed_dict是一个字典（dictionary），，它主要用于在运行计算图（computation graph）时为占位符（placeholders）提供具体的值
         # 这里是得到一个包含每个动作的概率的数组
         actions = self.sess.run(self.predict, feed_dict=feed_dict)
         # 返回数组中最大元素的索引（即返回概率最大动作的索引）
+        ## 如果actions是一个形状为(m, n)的二维数组，将返回一个长度为m的一维数组，表示m个智能体
         actions = np.argmax(actions, axis=1).astype(np.int32)
         return actions
 

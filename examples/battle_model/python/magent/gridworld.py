@@ -148,6 +148,10 @@ class GridWorld(Environment):
 
         # init view space, feature space, action space
         # 初始化视野空间、特征空间和动作空间
+        
+        ### self.view_space = （height,width,n_channel),height=width表示这一类agenttype的探测圆形的直径，n_channel表示通道数wall + additional + (has, hp) + (has, hp)即各种类型指标，比如只观测数量、生命值、wall，那么n_channel=3
+        ### self.feature_space = （features)，特征空间只有一维，features = embedding_size+AgentType.action_space.size() + 1
+        ### self.action_space = (AgentType.action_space)，特征空间只有一维，包括可以移动的点和可以攻击的点
         self.view_space = {}
         self.feature_space = {}
         self.action_space = {}
@@ -320,7 +324,7 @@ class GridWorld(Environment):
 
         # group中的智能体个数
         n = self.get_num(handle)
-        # 获取缓存区
+        # 获取缓存区，其实是创建空的数据表，大小为(n, ) + view_space，n为智能体个数
         view_buf = self._get_obs_buf(no, self.OBS_INDEX_VIEW,
                                      (n, ) + view_space, np.float32)
         feature_buf = self._get_obs_buf(no, self.OBS_INDEX_HP,

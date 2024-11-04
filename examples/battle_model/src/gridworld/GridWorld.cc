@@ -83,6 +83,7 @@ void GridWorld::reset() {
         } else {
             NUM_SEP_BUFFER = 8;
         }
+        // 创建了长度为NUM_SEP_BUFFER的动态数组，数组中存储的元素要求是MoveAction类型
         move_buffers = new std::vector<MoveAction>[NUM_SEP_BUFFER];
         turn_buffers = new std::vector<TurnAction>[NUM_SEP_BUFFER];
     }
@@ -101,6 +102,7 @@ void GridWorld::reset() {
     render_generator.next_file();
     stat_recorder.reset();
 
+    // 清空group中的所有agents
     for (int i = 0;i < groups.size(); i++) {
         std::vector<Agent*> &agents = groups[i].get_agents();
 
@@ -234,6 +236,8 @@ void GridWorld::add_agents(GroupHandle group, int n, const char *method,
         if (strequ(method, "random")) {
             for (int i = 0; i < n; i++) {
                 Agent *agent = new Agent(agent_type, id_counter, group);
+                // 条件表达式：turn_mode为真则为第二个，否则为第三个
+                // (Direction)(random_engine() % DIR_NUM)：随机数对DIR_NUM取余数，然后转换成Direction类型
                 Direction dir = turn_mode ? (Direction)(random_engine() % DIR_NUM) : NORTH;
                 Position pos;
 
@@ -301,37 +305,39 @@ void GridWorld::get_observation(GroupHandle group, float **linear_buffers) {
     AgentType &type = g.get_type();
 
     const int n_channel   = g.get_type().n_channel;
+    // 单位探测视野的长和宽
     const int view_width  = g.get_type().view_range->get_width();
     const int view_height = g.get_type().view_range->get_height();
+
+    // 分组groups个数
     const int n_group = (int)groups.size();
+    // 动作空间
     const int n_action = (int)type.action_space.size();
+    // 特征空间的维数：embedding_size + (int)groups[group].get_type().action_space.size() + 1;
     const int feature_size = get_feature_size(group);
 
     std::vector<Agent*> &agents = g.get_agents();
     size_t agent_size = agents.size();
 
     // transform buffers
+    // NDPointer 是一个模板类，<float, 4> 和 <float, 2> 指定了数组的数据类型和维度
+    // view_buffer是模板类的实例的名称，右边两个表示模板类的输入，分别为数据和维度空间
     NDPointer<float, 4> view_buffer(linear_buffers[0], {{-1, view_height, view_width, n_channel}});
     NDPointer<float, 2> feature_buffer(linear_buffers[1], {{-1, feature_size}});
 
+    // 将view_buffer的内存元素全部初始化为0，view_buffer大小(n,view_height,view_width,n_channel)
     memset(view_buffer.data, 0, sizeof(float) * agent_size * view_height * view_width * n_channel);
     memset(feature_buffer.data, 0, sizeof(float) * agent_size * feature_size);
 
     // gather view info from AgentType
-    const Range *range = type.view_range;
-    int view_x_offset = type.view_x_offset, view_y_offset = type.view_y_offset;
-    int view_left_top_x, view_left_top_y, view_right_bottom_x, view_right_bottom_y;
-    range->get_range_rela_offset(view_left_top_x, view_left_top_y,
-                                 view_right_bottom_x, view_right_bottom_y);
-
-    // to make channel layout in observation symmetric to every group
-    std::vector<int> channel_trans = make_channel_trans(group,
-                                                        group2channel(0),
-                                                        type.n_channel,
-                                                        n_group);
+p
 
     // build minimap
+    // （minimap）是一个三维数组视图，用于在特定条件下统计和归一化代理（agents）的分布
+    // minimap的元素表示在这个格子处的group的成员个数，如minimap(2,3,1)=3表示在（2，3）位置处有3个1号group的成员
     NDPointer<float, 3> minimap(nullptr, {{view_height, view_width, n_group}});
+
+    // 小地图缩放比例height / view_height
     int scale_h = (height + view_height - 1) / view_height;
     int scale_w = (width + view_width - 1) / view_width;
 
@@ -341,6 +347,7 @@ void GridWorld::get_observation(GroupHandle group, float **linear_buffers) {
 
         std::vector<int> group_sizes;
         for (int i = 0; i < n_group; i++)
+            // group_sizes的每个元素存储每个group的agets数量
             group_sizes.push_back(groups[i].get_size() > 0 ? (int)groups[i].get_size() : 1);
 
         // by agents
@@ -354,12 +361,16 @@ void GridWorld::get_observation(GroupHandle group, float **linear_buffers) {
                     continue;
                 Position pos = agents_[j]->get_pos();
                 int x = pos.x / scale_w, y = pos.y / scale_h;
+
+                // at是索引操作，取出(y,x,i)位置的元素
                 minimap.at(y, x, i)++;
                 total_ct++;
             }
             // scale
             for (int j = 0; j < view_height; j++) {
                 for (int k = 0; k < view_width; k++) {
+
+                    // 归一化，表示成密度
                     minimap.at(j, k, i) /= total_ct;
                 }
             }
@@ -371,6 +382,11 @@ void GridWorld::get_observation(GroupHandle group, float **linear_buffers) {
     for (int i = 0; i < agent_size; i++) {
         Agent *agent = agents[i];
         // get spatial view
+        // 从地图中提取一个特定智能体（Agent）周围的视图，并将其存储在一个线性缓冲区（view_buffer）中
+
+        // 这个缓存区是针对某一特定agent的，view_buffer维度为（n,view_height,view_width,n_channel)
+        // 这里每次填充第i个智能体的位置: （i,view_height,view_width,n_channel)
+        // 通道信息组成为wall + additional + (has, hp) + (has, hp) + minimap
         map.extract_view(agent, view_buffer.data + i*view_height*view_width*n_channel, &channel_trans[0], range,
                          n_channel, view_width, view_height, view_x_offset, view_y_offset,
                          view_left_top_x, view_left_top_y, view_right_bottom_x, view_right_bottom_y);
@@ -979,8 +995,8 @@ std::vector<int> GridWorld::make_channel_trans(
 }
 
 int GridWorld::group2channel(GroupHandle group) {
-    int base = 1;
-    int scale = 2;
+    int base = 1; // 通道计算的基础值
+    int scale = 2; // 规模：控制通道值的增长幅度
     if (food_mode)
         base++;
     if (minimap_mode)

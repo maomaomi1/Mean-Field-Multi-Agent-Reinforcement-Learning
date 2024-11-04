@@ -299,9 +299,22 @@ class MemoryGroup(object):
         ids = list(self.agent.keys())
         # 对id序列随机打乱
         np.random.shuffle(ids)
+        
+        ## self.agent是一个字典，key为id，value为AgentMemory对象
         for ele in ids:
+            """
+            tmp为该agent的所有信息的字典
+            res = {
+            'obs0': self.obs0.pull(),
+            'feat0': self.feat0.pull(),
+            'act': self.actions.pull(),
+            'rewards': self.rewards.pull(),
+            'terminals': self.terminals.pull(),
+            'prob': None if not self.use_mean else self.prob.pull()
+            }
+            """
             tmp = self.agent[ele].pull()
-            # _new_add表征新添加的数据量
+            # _new_add表征新添加的数据量，step数
             self._new_add += len(tmp['obs0'])
             self._flush(**tmp)
         # 清空智能体缓存区，这样做是为了在下一次数据收集时重新初始化每个智能体的缓冲区。

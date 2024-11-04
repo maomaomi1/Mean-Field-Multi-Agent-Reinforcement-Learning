@@ -126,8 +126,11 @@ void Map::average_pooling_group(float *group_buffer, int x0, int y0, int width, 
     }
 }
 
+// 从地图中提取一个特定智能体（Agent）周围的视图，并将其存储在一个线性缓冲区（linear_buffer）中
 void Map::extract_view(const Agent *agent, float *linear_buffer, const int *channel_trans, const Range *range,
+                       // 视图的通道，长宽和视图的 x 和 y 方向偏移量
                        int n_channel, int width, int height, int view_x_offset, int view_y_offset,
+                       // 视图的左上右下角坐标
                        int view_left_top_x, int view_left_top_y,
                        int view_right_bottom_x, int view_right_bottom_y) const {
     // convert coordinates between absolute map and relative view
@@ -185,6 +188,8 @@ void Map::extract_view(const Agent *agent, float *linear_buffer, const int *chan
 
     // scan the map
     for (int x = start_x; x <= end_x; x++) {
+
+        // 将二维坐标映射位一维
         PositionInteger pos_int = pos2int(x, start_y);
         for (int y = start_y; y <= end_y; y++) {
             int channel_id = channel_ids[pos_int];

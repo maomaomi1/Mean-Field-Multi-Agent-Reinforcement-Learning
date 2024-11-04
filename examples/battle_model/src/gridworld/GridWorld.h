@@ -115,6 +115,8 @@ private:
     std::vector<AttackAction> attack_buffer;
     // split the events to small regions and boundary for parallel
     int NUM_SEP_BUFFER;
+
+    // 定义了一个指针move_buffers和一个变量move_buffer_bound，要求元素为MoveAction类型
     std::vector<MoveAction> *move_buffers, move_buffer_bound;
     std::vector<TurnAction> *turn_buffers, turn_buffer_bound;
 
@@ -134,10 +136,12 @@ public:
     Agent(AgentType &type, int id, GroupHandle group) : dead(false), absorbed(false), group(group),
                                                         next_reward(0),
                                                         type(type),
-                                                        last_op(OP_NULL), op_obj(nullptr), index(0) {
+                                                                                                                                                                               last_op(OP_NULL), op_obj(nullptr), index(0) {
         this->id = id;
         dir = Direction(rand() % 4);
         hp = type.hp;
+
+        // 将type.action_space.size()强制转换为Action类型
         last_action = static_cast<Action>(type.action_space.size()); // dangerous here !
         next_reward = 0;
 

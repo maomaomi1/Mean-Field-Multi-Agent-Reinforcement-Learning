@@ -113,7 +113,7 @@ class MFQ(base.ValueNet):
         self.replay_buffer.push(**kwargs)
 
     def train(self):
-        # # 将各智能体的数据从各自的缓存区合并到主缓存区
+        # # 将各智能体的数据从各自的缓存区合并append到主缓存区，然后清除agent缓存区
         self.replay_buffer.tight()
         # 获取可以从回放缓冲区中采样的批次数量
         batch_name = self.replay_buffer.get_batch_num()

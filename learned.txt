@@ -82,3 +82,22 @@ result = py.my_script.my_function(data);
 result = double(result);  % 将 Python 列表转换为 MATLAB 数组
 disp(result);
 ## 在matlab中调python函数时，python函数的输入可以是matlab数据，输出可以是python数据
+
+动作空间action_space = [0,1,2,3,...,n_action-1]
+n_action为移动count与attack_count的和，count为两个range对象覆盖的格子数
+
+battle游戏中的viewrange为半径6的圆，attackrange为半径1.5的圆，圆形range的width和height都等于两倍半径
+
+### self.view_space = （height,width,n_channel), height=width表示这一类agenttype的探测圆形的直径，
+### n_channel表示通道数wall + additional + (has, hp) + (has, hp)即各种类型指标，比如只观测数量、生命值、wall，那么n_channel=3
+
+### self.feature_space = （features)，特征空间只有一维，features = embedding_size+AgentType.action_space.size() + 1
+### embedding_size在battle.py中设置了为10，action_space为[0,1,2,3,...,n_action-1]，最后的1为last_reward
+### feature的结构为[embedding, last_action (one hot), last_reward]为一维向量
+### self.action_space = (AgentType.action_space)，特征空间只有一维，包括可以移动的点和可以攻击的点
+
+该项目中模型不会在每个episode都保存权重，也不会间隔episode保存，而是根据该回合的训练情况
+if info['main']['total_reward'] > info['opponent']['total_reward']:
+满足条件说明模型表现良好，保存该次参数，这里使用自对弈更新方式，与另一个类似参数的模型进行对弈，相互更新
+
+无论是位置信息还是hp信息，一般都要归一化
