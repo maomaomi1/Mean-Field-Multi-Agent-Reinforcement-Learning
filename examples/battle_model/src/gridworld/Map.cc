@@ -140,6 +140,9 @@ void Map::extract_view(const Agent *agent, float *linear_buffer, const int *chan
     int eye_x, eye_y;
     int x1, y1, x2, y2;
 
+    // 获取real_x其实就是考虑了agent的方向和体型大小对实际pos的影响，pos对agent的体型加减，得到real_pos
+
+    // 以下都是为了计算agent的视野范围，因为agent的视野与他的朝向有关
     save_to_real(agent, agent_x, agent_y);
     rela_to_abs(agent_x, agent_y, dir, view_x_offset, view_y_offset, eye_x, eye_y);
     rela_to_abs(eye_x, eye_y, dir, view_left_top_x, view_left_top_y, x1, y1);
@@ -194,9 +197,12 @@ void Map::extract_view(const Agent *agent, float *linear_buffer, const int *chan
         for (int y = start_y; y <= end_y; y++) {
             int channel_id = channel_ids[pos_int];
 
+            // channel_id是与地图绑定的index信息，地图上每个格子都显示了它的id，如果id为-1，说明这个格子是墙，如果是1，就说明这里是敌方战斗机
+            // 是2就可能说明是友方战斗机
             if (channel_id != -1 && range->is_in(view_y, view_x)) {
                 channel_id = channel_trans[channel_id];
                 buffer.at(view_y, view_x, channel_id) = 1;
+                // 就是判断这个格子处是否被占据且占据的是agent单位
                 if (slots[pos_int].occupier != nullptr && slots[pos_int].occ_type == OCC_AGENT) { // is agent
                     Agent *p = ((Agent *) slots[pos_int].occupier);
                     buffer.at(view_y, view_x, channel_id + 1) = p->get_hp() / p->get_type().hp; // normalize hp
@@ -377,6 +383,7 @@ Reward Map::do_turn(Agent *agent, int wise) {
     int anchor_x, anchor_y;
     int new_x, new_y;
     int save_x, save_y;
+    // 获取real_x其实就是考虑了agent的方向和体型大小对实际pos的影响，pos对agent的体型加减，得到real_pos
     save_to_real(agent, agent_x, agent_y);
     rela_to_abs(agent_x, agent_y, dir, agent->get_type().turn_x_offset, agent->get_type().turn_y_offset,
                 anchor_x, anchor_y);

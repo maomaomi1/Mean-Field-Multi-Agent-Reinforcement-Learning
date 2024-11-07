@@ -337,7 +337,7 @@ p
     // minimap的元素表示在这个格子处的group的成员个数，如minimap(2,3,1)=3表示在（2，3）位置处有3个1号group的成员
     NDPointer<float, 3> minimap(nullptr, {{view_height, view_width, n_group}});
 
-    // 小地图缩放比例height / view_height
+    // 小地图缩放比例height / view_height，这里的height、width为全地图的大小
     int scale_h = (height + view_height - 1) / view_height;
     int scale_w = (width + view_width - 1) / view_width;
 
@@ -357,6 +357,8 @@ p
             AgentType type_ = agents[0]->get_type();
             size_t total_ct = 0;
             for (int j = 0; j < agents_.size(); j++) {
+
+                // 如果是可吸收类型的单位则跳过
                 if (type_.can_absorb && agents_[j]->is_absorbed()) // ignore absorbed goal
                     continue;
                 Position pos = agents_[j]->get_pos();
